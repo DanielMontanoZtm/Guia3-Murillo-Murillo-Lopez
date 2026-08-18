@@ -5,8 +5,9 @@ public class FPSGrabSystem : MonoBehaviour
 {
     [Header("Referencias")]
     [SerializeField] private Camera playerCamera;
-    [SerializeField] private Transform holdPoint;
-    [SerializeField] private float grabDistance = 5.0f;
+    [SerializeField] private float grabDistance = 10.0f; // Distancia máxima para alcanzar la caja
+    [SerializeField] private float holdDistance = 4.0f;  // Distancia caja una vez agarrada
+    [SerializeField] private float followSpeed = 25.0f;  // Velocidad mientras está agarrada
 
     [Header("Feedback Visual")]
     [SerializeField] private Image crosshairImage;
@@ -23,19 +24,20 @@ public class FPSGrabSystem : MonoBehaviour
     {
         playerController = GetComponent<CharacterController>();
 
-        if (playerCamera == null)
-            playerCamera = GetComponentInChildren<Camera>();
-        if (playerCamera == null)
-            playerCamera = Camera.main;
+        if (playerCamera == null) playerCamera = GetComponentInChildren<Camera>();
+        if (playerCamera == null) playerCamera = Camera.main;
+    }
 
-        // Crear HoldPoint a una distancia segura si no existe
-        if (holdPoint == null && playerCamera != null)
+    private void FixedUpdate()
+    {
+        if (heldObject != null && playerCamera != null)
         {
-            GameObject hp = new GameObject("HoldPoint");
-            hp.transform.SetParent(playerCamera.transform);
-            hp.transform.localPosition = new Vector3(0f, -0.3f, 2.2f); // Distancia cómoda
-            hp.transform.localRotation = Quaternion.identity;
-            holdPoint = hp.transform;
+            // Calcular el punto exacto a 'holdDistance' metros enfrente de la cámara
+            Vector3 targetPosition = playerCamera.transform.position + (playerCamera.transform.forward * holdDistance);
+
+            Vector3 directionToPoint = targetPosition - heldObject.position;
+            heldObject.linearVelocity = directionToPoint * followSpeed;
+            heldObject.angularVelocity = Vector3.zero;
         }
     }
 
@@ -43,17 +45,9 @@ public class FPSGrabSystem : MonoBehaviour
     {
         UpdateCrosshairFeedback();
 
-        // Atajo para PC
         if (Input.GetKeyDown(KeyCode.E) || Input.GetKeyDown(KeyCode.Space))
         {
             ToggleGrab();
-        }
-
-        // Mantener la caja flotando suavemente en el HoldPoint
-        if (heldObject != null)
-        {
-            heldObject.transform.position = holdPoint.position;
-            heldObject.transform.rotation = holdPoint.rotation;
         }
     }
 
@@ -81,14 +75,8 @@ public class FPSGrabSystem : MonoBehaviour
 
     public void ToggleGrab()
     {
-        if (heldObject == null)
-        {
-            TryGrab();
-        }
-        else
-        {
-            DropObject();
-        }
+        if (heldObject == null) TryGrab();
+        else DropObject();
     }
 
     private void TryGrab()
@@ -104,19 +92,20 @@ public class FPSGrabSystem : MonoBehaviour
                 heldObject = rb;
                 heldCollider = hit.collider;
 
-                // 1. Apagar velocidades residuales para que no salga disparada
-                heldObject.linearVelocity = Vector3.zero;
-                heldObject.angularVelocity = Vector3.zero;
-                heldObject.isKinematic = true;
+                // Configurar física de agarre
+                heldObject.isKinematic = false; 
                 heldObject.useGravity = false;
+                heldObject.collisionDetectionMode = CollisionDetectionMode.Continuous;
 
-                // 2. Ignorar colisión entre el jugador y la caja mientras se sostiene
+
+                Vector3 startHoldPosition = playerCamera.transform.position + (playerCamera.transform.forward * holdDistance);
+                heldObject.transform.position = startHoldPosition;
+
+                // Ignorar colisiones entre la cápsula del Player y la caja
                 if (playerController != null && heldCollider != null)
                 {
                     Physics.IgnoreCollision(playerController, heldCollider, true);
                 }
-
-                Debug.Log("📦 Agarrada: " + heldObject.name);
             }
         }
     }
@@ -125,18 +114,13 @@ public class FPSGrabSystem : MonoBehaviour
     {
         if (heldObject != null)
         {
-            // Reactivar colisión con el jugador
             if (playerController != null && heldCollider != null)
             {
                 Physics.IgnoreCollision(playerController, heldCollider, false);
             }
 
-            // Reactivar física y gravedad
-            heldObject.isKinematic = false;
             heldObject.useGravity = true;
-            heldObject.linearVelocity = Vector3.zero; // Soltarla quieta
-
-            Debug.Log("📦 Soltada: " + heldObject.name);
+            heldObject.linearVelocity = Vector3.zero;
 
             heldObject = null;
             heldCollider = null;
